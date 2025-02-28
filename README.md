@@ -1,6 +1,6 @@
 # Overview
 
-This repository provides a workflow for microbiome data preprocessing, batch effect correction, statistical analysis, and visualization. The pipeline consists of the following steps:
+This repository contains the code used in the manuscript "Deciphering gut microbiome in colorectal cancer via robust learning methods". The code is provided for transparency, reproducibility, and to allow reviewers and readers to better understand the methods and analysis presented in the paper.
 
 ## **1. Data Preprocessing and Batch Effect Correction**  
 - **Data Preprocessing:** The **`MOSAIC`** folder contains three steps: **`step0.ipynb`**, **`step1.Rmd`**, and **`step2.ipynb`**, which sequentially clean the dataset.  
@@ -15,5 +15,4 @@ This repository provides a workflow for microbiome data preprocessing, batch eff
 - The visualization scripts in the **`Plots`** folder generate figures and graphs based on the processed data.  
 - **`Plots`** folder include two files: **`forest_plot_and_tables.Rmd`** and **`other_plots.Rmd`**.
 
-This structured workflow ensures reproducibility and consistency in microbiome data analysis.
 
