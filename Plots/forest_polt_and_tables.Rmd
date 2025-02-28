@@ -1,0 +1,216 @@
+---
+title: "Forest Plot and Table"
+output: html_document
+---
+Run Main.Rmd first!
+
+```{r}
+library(ggtext)
+```
+
+# LEfSe
+```{r}
+OTU_tab_rel_t <- t(OTU_tab_rel) %>% 
+  as.data.frame() %>% 
+  mutate(Sam_id = colnames(OTU_tab_rel))
+
+meta_otu <- merge(metadata, OTU_tab_rel_t, by = "Sam_id") 
+
+CI_all <- meta_otu %>%
+  select(-Dataset, -Sam_id) %>%  
+  summarise(across(where(is.numeric),  
+                   ~ {
+                     test <- wilcox.test(. ~ meta_otu$DiseaseState, conf.int = TRUE)
+                     tibble(
+                       p_value = test$p.value,
+                       estimate = test$estimate,  
+                       conf_low = test$conf.int[1], 
+                       conf_high = test$conf.int[2]
+                     )
+                   })) %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "results") %>%  
+  unnest(results) %>%  
+  mutate(adjusted_p = p.adjust(p_value, method = "BH"))  
+
+CI <- CI_all %>%
+  filter(variable %in% CRC_LEfSe_zackular$features)
+CI
+```
+
+## Forest Plot
+```{r}
+p = CI %>%
+  mutate(taxa = factor(variable, levels = rev(variable))) %>%
+  ggplot(aes(y = taxa)) +
+  geom_point(aes(x = estimate), size = 4, shape = 21, fill = '#F8766D', color = "black") +  
+  geom_errorbarh(aes(xmin = conf_low, xmax = conf_high), height = 0.2, color = "black", size = 1) +
+  
+  #geom_point(aes(x = estimate), size = 4, shape = 21, fill = "black", color = "black") +  # Black points
+  #geom_errorbarh(aes(xmin = conf_low, xmax = conf_high), height = 0.2, color = rgb(0.1, 0.1, 0.7, 0.5), size = 1) + 
+  
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  ggtitle('Differential Abundance of Taxa: CRC Group vs. Healthy Group') +
+  ylab(label = NULL) +
+  xlab(label = "Difference in Abundance") +
+  theme_minimal() +
+  theme(axis.text.y = element_markdown(size = 18)) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        axis.text = element_text(size = 18))
+p 
+ggsave("forest_LEfSe.jpg", plot = p, width = 10, height = 8, dpi = 1000)
+```
+
+
+
+```{r}
+all(CI$adjusted_p < 0.05)
+```
+
+
+
+## Scaled Forest Plot
+```{r}
+CI$estimate_scaled <- scale(CI$estimate)
+CI$conf_low_scaled <- scale(CI$conf_low)
+CI$conf_high_scaled <- scale(CI$conf_high)
+
+p_scaled_LDA <- CI %>%
+  mutate(taxa = factor(variable, levels = rev(variable))) %>%
+  ggplot(aes(y = taxa)) +
+  geom_point(aes(x = estimate_scaled), size = 4, shape = 21, fill = '#F8766D', color = "white") +  
+  #geom_linerange(aes(xmin = `conf_low_scaled`, xmax = `conf_high_scaled`), color = "black", size = 0.5) +  
+  geom_errorbarh(aes(xmin = conf_low_scaled, xmax = conf_high_scaled), height = 0.2, color = "black", size = 0.7) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  ggtitle('Standardized Differential Abundance of Taxa: CRC Group vs. Healthy Group') +
+  ylab(label = NULL) +
+  xlab(label = "Standardized Difference in Abundance") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15),  
+        text = element_text(size = 17),
+        axis.title = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        axis.text = element_text(size = 18))
+p_scaled_LDA
+
+#ggsave("forest_LEfSe_scared.jpg", plot = p_scaled, width = 12, height = 8, dpi = 1000)
+```
+
+## Scaled table
+```{r}
+CI <- CI %>%
+  select(variable, estimate_scaled, conf_low_scaled, conf_high_scaled, p_value, adjusted_p)
+CI
+```
+
+
+# ANCOMBC
+```{r}
+res_df <- data.frame(
+  taxa = CRC_ANCOM_BC_zackular$res$lfc$taxon,  
+  lfc = CRC_ANCOM_BC_zackular$res$lfc$DiseaseStateCRC,       
+  se = CRC_ANCOM_BC_zackular$res$se$DiseaseStateCRC,
+  p_value = CRC_ANCOM_BC_zackular$res$p_val$DiseaseStateCRC,
+  q_value = CRC_ANCOM_BC_zackular$res$q_val$DiseaseStateCRC
+)
+
+res_df <- res_df %>%
+  mutate(
+    conf_low = lfc - 1.96 * se,  
+    conf_high = lfc + 1.96 * se  
+  )
+res_df
+
+res_select <- res_df %>%
+  filter(taxa  %in% df_fig_crc$taxon_id)
+res_select
+```
+
+## Forest Plot
+```{r}
+p_lfc <- res_select %>%
+  mutate(taxa = factor(taxa, levels = rev(taxa))) %>%  
+  ggplot(aes(y = taxa)) +
+  geom_point(aes(x = lfc), size = 4, shape = 21, fill = '#F8766D', color = "white") +
+  geom_errorbarh(aes(xmin = conf_low, xmax = conf_high), height = 0.2, color = "black", size = 0.7) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  ggtitle('Differential Abundance of Taxa: CRC Group vs. Healthy Group') +
+  ylab(NULL) +
+  xlab("Log2 Fold Change") +
+  theme_minimal()+
+  theme(axis.text.y = element_markdown(size = 15)) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        axis.text = element_text(size = 18))
+p_lfc 
+ggsave("forest_ANCOMBC_LFC.jpg", plot = p, width = 10, height = 8, dpi = 1000)
+```
+
+## Table
+```{r}
+ANOCOMBC_tab <- res_select %>%
+  mutate(Taxa = taxa,
+         Estimate = lfc,
+         LowerCI = conf_low,
+         UpperCI = conf_high,
+         "p-value" = p_value,
+         "q-value" = q_value) %>%
+  select(Taxa, Estimate, LowerCI, UpperCI, "p-value", "q-value")
+ANOCOMBC_tab
+```
+
+
+
+# Sccomp
+```{r}
+#CRC_Sccomp_zackular
+CRC_Sccomp_zackular_df <- as.data.frame(CRC_Sccomp_zackular)
+
+CRC_Sccomp_zackular_df <- CRC_Sccomp_zackular_df[-seq(1, nrow(CRC_Sccomp_zackular_df), by = 2), ]
+CRC_Sccomp_zackular_df
+
+select <- c_FDR[c_FDR$c_FDR < 0.05, ]
+select
+
+CRC_Sccomp_zackular_df_select <- CRC_Sccomp_zackular_df %>%
+  filter(Taxa  %in% select$Taxa) %>%
+  select(Taxa, c_effect, c_lower, c_upper, c_pH0, c_FDR)
+CRC_Sccomp_zackular_df_select
+```
+
+## Forest Plot
+```{r}
+p <- CRC_Sccomp_zackular_df_select %>%
+  mutate(taxa = factor(Taxa, levels = rev(Taxa))) %>%  # 反转分类单元顺序
+  ggplot(aes(y = taxa)) +
+  geom_point(aes(x = c_effect), size = 4, shape = 21, fill = '#F8766D', color = "white") +
+  geom_errorbarh(aes(xmin = c_lower, xmax = c_upper), height = 0.2, color = "black", size = 0.7) + 
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  ggtitle('Differential Abundance of Taxa: CRC Group vs. Healthy Group') +
+  ylab(NULL) +
+  xlab("Difference in Abundance ") +
+  theme_minimal()+
+  theme(axis.text.y = element_markdown(size = 15)) +
+  theme(text = element_text(size = 16),
+        axis.title = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        axis.text = element_text(size = 18))
+p 
+ggsave("forest_Sccomp.jpg", plot = p, width = 10, height = 8, dpi = 1000)
+```
+
+## Table
+```{r}
+Sccomp_tab <- CRC_Sccomp_zackular_df_select %>%
+  mutate(Taxa = Taxa,
+         Estimate = c_effect,
+         LowerCI = c_lower,
+         UpperCI = c_upper,
+         "p-value" = c_pH0,
+         "q-value" = c_FDR) %>%
+  select(Taxa, Estimate, LowerCI, UpperCI, "p-value", "q-value")
+ANOCOMBC_tab
+```
+

@@ -1,0 +1,584 @@
+---
+title: "RobustLearning—GutMicrobiome-CRC"
+
+output: 
+  wcmtheme::wcm_html: 
+    toc: true
+    toc_float: true
+    df_print: paged
+    number_sections: no
+    code_folding: hide
+---
+```{r,message=FALSE,warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ANCOMBC)
+library(DT)
+library(lefser)
+library(readxl)
+library(phyloseq)
+library(DESeq2)
+library(stringr)
+library(dplyr)
+library(DT)
+library(Biostrings)
+library(tidyverse)
+library(sccomp)
+library(mia)
+
+library(phyloseq)
+library(ape)
+library(tidyverse)
+library(vegan)
+library(gplots)
+library(MiRKAT) 
+library(ade4)
+library(GUniFrac)
+library(zCompositions)
+library(compositions)
+library(lme4)
+library(lmerTest)
+library(pheatmap)
+library(ComplexHeatmap)
+library(SSKAT)
+library(pldist)
+library(readxl)
+library(gtsummary)
+library(gt)
+library(multcomp)
+library(knitr)
+library(kableExtra)
+
+library(stringr)
+library(rstan)
+library(gridExtra)
+library(ggplot2)
+library(ggpubr)
+library(gghalves)
+library(patchwork)
+```
+
+```{r}
+source("tool_function.R")
+load("otu_crc_zackular.RData")
+```
+
+# Data{.tabset}
+
+## colData
+```{r,message=FALSE,warning=FALSE}
+metadata <- read.csv("microbiomeHD_meta_data.csv")
+metadata <- metadata %>%
+  as.data.frame() %>%
+  mutate(
+    DiseaseState = ifelse(DiseaseState == "nonCRC", "H", DiseaseState)
+  )
+rownames(metadata) <- metadata$Sam_id
+metadata$DiseaseState <- factor(metadata$DiseaseState, levels = c("H","CRC"))
+metadata <- metadata[!is.na(metadata$DiseaseState), ]
+head(metadata) %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+## assays (counts)
+
+```{r,message=FALSE,warning=FALSE}
+OTU_tab_zackular <- fit_crc_zackular
+OTU_tab_zackular <- t(OTU_tab_zackular)
+OTU_matrix_zackular <- as.matrix(OTU_tab_zackular)
+OTU_matrix_zackular[1:5, 1:5]
+str(OTU_matrix_zackular)
+```
+
+## rowData
+```{r,message=FALSE,warning=FALSE}
+row_data <- as.data.frame(rownames(OTU_tab_zackular))
+rownames(row_data) <- rownames(OTU_tab_zackular)
+colnames(row_data)[1] <- "genus"
+head(row_data) %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+
+# Community-level Analysis I: Alpha Diversity {.tabset}
+
+Look at the alpha diversity of the samples, using
+
+* Richness: the number of genera present.
+
+* Evenness: how relatively abundant each of the genera are, by Shannon index.
+
+Outcome：
+
+* The Richness shows a significant difference between the CRC and healthy states, while the Evenness does not show a significant difference between the CRC and healthy states.
+
+## Relative Abundance OTU
+```{r,message=FALSE,warning=FALSE}
+OTU_tab_rel = apply(OTU_matrix_zackular, 2, function(z){ z/sum(z) })
+cat(paste("Relative Abundance:", "Number of taxa =", nrow(OTU_tab_rel)))
+OTU_tab_rel[1:5, 1:5]
+```
+
+## Visualize Alpha Diversity{.tabset}
+
+$$Shanno: H = -\sum_{i=1}^S p_i \log(p_i)$$
+
+$S$number of all taxa，$p_i$The number of taxa in the i-th sample/the total number of taxa. When the abundance distribution of all taxa is uniform, the Shannon index is high.
+
+### Hist
+```{r,message=FALSE,warning=FALSE}
+# raw is OUT（taxa），col is sample，For each column, find how many OUT(taxa) are not 0. That's how many different taxa are richness.
+Richness = apply(OTU_tab_rel>0, 2, sum) # richness
+
+Evenness = diversity(t(OTU_tab_rel), index = "shannon") # evenness and richness
+
+par(mfrow=c(1,2))
+hist(Richness, main="Richness")
+hist(Evenness, main="Shannon Index")
+```
+
+### Boxplot
+```{r,warning=FALSE,message=FALSE}
+p <- ggplot(data = metadata, 
+       aes(x = DiseaseState, y = Richness, fill = DiseaseState)) +
+  geom_half_violin(side = "r", color = NA, alpha = 0.4, width = 0.55) +
+  geom_half_boxplot(side = "r", errorbar.draw = TRUE, width = 0.2, linewidth = 0.8) + 
+  geom_errorbar(stat = "summary", fun.data = function(y) data.frame(
+                ymin = min(y), ymax = max(y), y = mean(y)),
+                width = 0.1, size = 1)  +
+  geom_half_point_panel(side = "l", shape = 21, size = 3, color = "white") +
+  scale_fill_manual(values = c("#00BFC4", "#F8766D")) +
+  scale_y_continuous(limits = c(35, 60), expand = c(0, 0)) +
+  labs(y = "Richness", x = NULL, title = "") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
+  geom_hline(yintercept = mean(metadata$Richness), linetype = 2) +
+  theme(
+    legend.position = "bottom",  
+    legend.text = element_text(size = 14),  
+    legend.title = element_text(size = 16, face = "bold"), 
+    panel.background = element_blank(),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),  
+    axis.text = element_text(size = 16, color = "black"), 
+    axis.title.y = element_text(color = "black", size = 18, face = "bold"), 
+    axis.line = element_line(size = 1, color = "black") 
+  ) +
+  annotate("text", x = 2.2, y = 59, label = "p < 0.001", size = 6, fontface = "bold", hjust = 1)
+
+p1 <- ggplot(data = metadata, 
+       aes(x = DiseaseState, y = Evenness, fill = DiseaseState)) +
+  geom_half_violin(side = "r", color = NA, alpha = 0.4, width = 0.55) +
+  geom_half_boxplot(side = "r", errorbar.draw = TRUE, width = 0.2, linewidth = 0.8) +  
+  stat_summary(fun = max, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..),
+               width = 0.2, size = 0.8) +
+  stat_summary(fun = function(y) boxplot.stats(y)$stats[1], geom = "errorbar", 
+               aes(ymax = ..y.., ymin = ..y..), width = 0.2, size = 0.8) +
+  geom_half_point_panel(side = "l", shape = 21, size = 3, color = "white") +
+  scale_fill_manual(values = c("#00BFC4", "#F8766D")) +
+  scale_y_continuous(limits = c(1, 3.5), expand = c(0, 0)) +
+  labs(y = "Shannon Index", x = NULL, title = "") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1)) +
+  geom_hline(yintercept = mean(metadata$Evenness), linetype = 2) +
+  theme(
+    legend.position = "bottom", 
+    legend.text = element_text(size = 14),  
+    legend.title = element_text(size = 16, face = "bold"), 
+    panel.background = element_blank(),
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.text = element_text(size = 16, color = "black"), 
+    axis.title.y = element_text(color = "black", size = 18, face = "bold"),  
+    axis.line = element_line(size = 1, color = "black")  
+  ) +
+  annotate("text", x = 2.2, y = 3.4, label = "p = 0.93", size = 6, fontface = "bold", hjust = 1)
+
+combined_plot <- p + p1 + 
+  plot_layout(ncol = 2, guides = "collect") &  
+  theme(
+    legend.position = "bottom", 
+    legend.text = element_text(size = 13.5),  
+    legend.title = element_text(size = 13.5, face = "bold") 
+  ) &
+  plot_annotation(tag_levels = 'a') &  # Adds labels (a) and (b)
+  theme(plot.tag = element_text(size = 22, face = "bold"))  # Customize the label appearance
+  
+print(combined_plot)
+ggsave("boxplot_richness.jpg", plot = combined_plot, width = 13, height = 8, dpi = 1000)
+```
+
+
+## Alpha Diversity Analysis 
+
+To quantify what we visualize above, we use
+
+* Wilcoxon rank sum test: to see whether there is difference between two groups(H/CRC).
+
+```{r,message=FALSE,warning=FALSE}
+res1 = res2 = data.frame(HvsCRC.p=NA)
+
+idx1 = which(metadata$DiseaseState == 'H')
+idx2 = which(metadata$DiseaseState == 'CRC')
+
+res1[, 1] = round( wilcox.test(Richness[idx1], Richness[idx2])$p.value, digits=3 ) 
+res2[, 1] = round( wilcox.test(Evenness[idx1], Evenness[idx2])$p.value, digits=3 ) 
+#cat("Alpha diversity across Days: ")
+
+#cat("Richness: ")
+res1$Term = "Richness"
+res2$Term = "Shannon Index"
+
+rbind(res1, res2) %>%  
+  relocate(Term) %>% 
+  format_df_tb() %>% 
+  tab_style(
+      style = list(cell_fill(color = "#e0ecf4")),
+      locations = cells_body(columns = HvsCRC.p,
+                             rows = HvsCRC.p < 0.05))
+```
+
+
+# Community-level Analysis II: Beta Diversity  {.tabset}
+
+Four types of microbiome-tailored distances are used:
+
+* Non-phylogenetic and presence/absence distance: Jaccard.
+
+* Non-phylogenetic and abundance distances: Aitchison.
+
+Outcome：
+
+* Jaccard and Aitchison distances reveal significant differences in microbial community structures between the healthy and CRC groups, which are supported by both PERMANOVA and MiRKAT.
+
+## CLR Relative Abundance OTU
+```{r,message=FALSE,warning=FALSE}
+# geometric Bayesian multiplicative replacement
+imputed = cmultRepl(t(OTU_tab_rel), suppress.print = TRUE) # impute zero
+#OTU_tab_rel[1:3,1:3]; t(imputed)[1:3,1:3]
+#nrow(OTU_tab_rel);nrow(t(imputed)) ##delete 12 genera
+
+# CLR
+OTU_tab_clr = t(as.matrix(clr(imputed)))
+cat(paste("CLR Transformed Abundance:", "Number of taxa =", nrow(OTU_tab_clr)))
+OTU_tab_clr[1:5, 1:5]
+```
+
+
+## Visualize Beta Diversity{.tabset}
+```{r, message=FALSE,warning=FALSE, results='hide'}
+# Jaccard
+D.jaccard = as.matrix(vegdist(t(OTU_tab_rel), method = 'jaccard', binary = T)) # binary=TRUE present(0/1)
+
+K.jaccard =  MiRKAT::D2K(D.jaccard) # D2K converts the Jaccard distance matrix to a kernel matrix for subsequent eigenvalue decomposition
+eig.jaccard = eigen(K.jaccard, symm = T) # Eigenvalue decomposition of the kernel matrix K.jaccard with symm = T specifies that the matrix is symmetric
+ev.jaccard =  eig.jaccard$value
+pct.jaccard = (ev.jaccard/sum(ev.jaccard))[1:5] # Extracting and calculating eigenvalue percentages
+pc.jaccard =  eig.jaccard$vec[,1:2] # Extract the first two principal components
+
+# Aitchison
+D.aitch = as.matrix(vegdist(t(OTU_tab_clr), method = 'euclidean', binary = F)) # clr + Euclid
+
+K.aitch =  MiRKAT::D2K(D.aitch)
+eig.aitch = eigen(K.aitch, symm = T)
+ev.aitch =  eig.aitch$value
+pct.aitch = (ev.aitch/sum(ev.aitch))[1:5]
+pc.aitch =  eig.aitch$vec[,1:2]
+```
+
+As an exploration, we visualize stratified PCoAs according to DiseaseState(H/CRC) in the full set.
+
+### Jaccard & Aitchison
+```{r}
+MDS.jaccard = cmdscale(D.jaccard, k=4)
+MDS.aitch = cmdscale(D.aitch, k=4)
+```
+
+```{r,message=FALSE,warning=FALSE}
+par(mfrow = c(1, 2), mar = c(0, 0, 0, 0), xaxt = 'n', yaxt = 'n', bty = 'n')
+
+xr = c(min(pc.jaccard[, 1]),max(pc.jaccard[, 1])) * 1.25
+yr = c(min(pc.jaccard[, 2]),max(pc.jaccard[, 2])) * 1.25
+a = ade4::s.class(MDS.jaccard, fac=as.factor(metadata$DiseaseState),
+              col = c("#00BFC4", "#F8766D"), 
+              sub = paste("Stratified by DiseaseState - Jaccard"),
+              csub = 1, clabel = 1, xlim = xr, ylim = yr)
+text(x = max(xr)*0.9+0.01, y = max(yr)*0.8, labels = "p < 0.001", cex = 1)
+
+xr = c(min(pc.aitch[, 1]),max(pc.aitch[, 1])) * 85
+yr = c(min(pc.aitch[, 2]),max(pc.aitch[, 2])) * 85
+b = ade4::s.class(MDS.aitch, fac=as.factor(metadata$DiseaseState), 
+              col = c("#00BFC4", "#F8766D"), 
+              sub = paste("Stratified by DiseaseState - Aitchison"),
+              csub = 1, clabel = 1, xlim = xr, ylim = yr)
+text(x = max(xr)-3, y = max(yr)+3, labels = "p < 0.001", cex = 1)
+```
+
+
+
+## Beta Diversity Analysis 
+
+To quantify what we visualize above, we use
+
+* PERMANOVA test: to see whether there is any difference among multiple groups. 
+
+* MiRKAT test: to see whether there is difference between two groups
+
+```{r,message=FALSE,warning=FALSE}
+res = data.frame(Distance=c('Jaccard', 'Aitchison'), HvsCRC.PERMANOVA.p=NA, HvsCRC.MiRKAT.p=NA)
+
+idx1 = which(metadata$DiseaseState == 'H')
+idx2 = which(metadata$DiseaseState == 'CRC')
+
+d = D.jaccard
+res[1, 2] = round( adonis2(d ~ as.factor(metadata$DiseaseState))$'Pr(>F)'[1], digits=3 ) 
+
+
+K.jaccard = D2K(as.matrix(D.jaccard[c(idx1, idx2), c(idx1, idx2)]))
+meta_var = metadata$DiseaseState[c(idx1, idx2)]
+res[1, 3] = round( MiRKAT(y = as.numeric(factor(meta_var)) - 1, X = NULL, Ks = K.jaccard, out_type = "D", 
+                          method = "davies", returnKRV = TRUE, returnR2 = TRUE)$p_values, digits=3 ) 
+
+d = D.aitch
+res[2, 2] = round( adonis2(d ~ as.factor(metadata$DiseaseState))$'Pr(>F)'[1], digits=3 ) 
+
+
+K.aitch = D2K(as.matrix(D.aitch[c(idx1, idx2), c(idx1, idx2)]))
+meta_var = metadata$DiseaseState[c(idx1, idx2)]
+res[2, 3] = round( MiRKAT(y = as.numeric(factor(meta_var)) - 1, X = NULL, Ks = K.aitch, out_type = "D", 
+                          method = "davies", returnKRV = TRUE, returnR2 = TRUE)$p_values, digits=3 ) 
+
+res %>% 
+  format_df_tb() %>% 
+  tab_style(
+      style = list(cell_fill(color = "#e0ecf4")),
+      locations = cells_body(columns = HvsCRC.PERMANOVA.p,
+                             rows = HvsCRC.PERMANOVA.p < 0.05)) %>% 
+  tab_style(
+      style = list(cell_fill(color = "#e0ecf4")),
+      locations = cells_body(columns = HvsCRC.MiRKAT.p,
+                             rows = HvsCRC.MiRKAT.p < 0.05))
+```
+
+# LEfSe{.tabset}
+
+## SummarizedExperiment
+
+```{r,message=FALSE,warning=FALSE}
+CRC_zackular <- SummarizedExperiment(assays=list(exprs = OTU_matrix_zackular),
+                                rowData = row_data,
+                                colData = metadata)
+CRC_zackular
+```
+
+```{r,message=FALSE,warning=FALSE}
+# Convert count data to abundances
+relativeAb <- function(se, assay = 1L) {
+  assay_data <- assay(se, i = assay)
+  csums <- colSums(assay_data)
+  div <- matrix(rep(csums, each = nrow(assay_data)), ncol = ncol(assay_data))
+  res <- assay_data / div * 1e6
+  assaylist <- assays(se)
+  newalist <- append(
+    assaylist, values = S4Vectors::SimpleList(rel_abs = res), after = 0L
+  )
+  assays(se) <- newalist
+  se
+}
+
+CRC_Ab_zackular <- relativeAb(CRC_zackular)
+```
+
+## LDA Scores
+```{r,message=FALSE,warning=FALSE}
+# reference category is 'H'
+set.seed(2024)
+CRC_LEfSe_zackular <- lefser(CRC_Ab_zackular, groupCol = "DiseaseState", blockCol = NULL, method = "BH")
+CRC_LEfSe_zackular
+```
+
+## Plots
+```{r,message=FALSE,warning=FALSE}
+lefserPlot(CRC_LEfSe_zackular)
+```
+
+
+# ANCOM-BC (BH){.tabset}
+
+## TreeSummarizedExperiment
+```{r,message=FALSE,warning=FALSE}
+#identical(rownames(OTU_matrix_zackular), rownames(row_data))
+#identical(colnames(OTU_matrix_zackular), rownames(metadata))
+
+CRC_tree_zackular <- TreeSummarizedExperiment(assays=list(counts = OTU_matrix_zackular),
+                                rowData = row_data,
+                                colData = metadata)
+CRC_tree_zackular
+```
+
+## ANCOM-BC
+```{r,message=FALSE,warning=FALSE}
+set.seed(2024)
+
+CRC_ANCOM_BC_zackular <-  ancombc(data = CRC_tree_zackular, # CRC_tree: TreeSummarizedExperiment 
+                                    assay_name = "counts", 
+                                    tax_level = "genus", 
+                                    phyloseq = NULL, 
+                                    formula = "DiseaseState", 
+                                    p_adj_method = "BH", 
+                                    group = NULL)
+```
+
+## FDR (BH)
+```{r,message=FALSE,warning=FALSE}
+CRC_ANCOM_BC_zackular_q <- CRC_ANCOM_BC_zackular$res$q_val
+#CRC_ANCOM_BC_zackular_q
+
+datatable(CRC_ANCOM_BC_zackular_q, options = list(pageLength = 10, autoWidth = TRUE)) %>%
+  formatStyle(
+    'DiseaseStateCRC',
+    backgroundColor = styleInterval(0.05, c('lightblue', 'transparent'))
+  )
+```
+
+## diff_abn
+Same to "FDR (BH)", if 'DiseaseStateCRC' < 0.05, DiseaseStateCRC is FALSE
+```{r,message=FALSE,warning=FALSE}
+CRC_ANCOM_BC_zackular_diff_abn <- CRC_ANCOM_BC_zackular$res$diff_abn
+#CRC_ANCOM_BC_zackular_diff_abn
+
+datatable(CRC_ANCOM_BC_zackular_diff_abn, options = list(pageLength = 10, autoWidth = TRUE)) %>%
+  formatStyle(
+    'DiseaseStateCRC',
+    backgroundColor = styleEqual(TRUE, 'lightblue')
+  )
+```
+
+## LFC Visualization
+```{r,message=FALSE,warning=FALSE}
+res_zackular <- CRC_ANCOM_BC_zackular$res
+
+df_lfc_zackular <- data.frame(res_zackular$lfc[, -1] * res_zackular$diff_abn[, -1], check.names = FALSE) %>%
+  mutate(taxon_id = res_zackular$diff_abn$taxon) %>%
+  select(taxon_id, everything())
+#df_lfc_zackular
+
+df_se_zackular <- data.frame(res_zackular$se[, -1] * res_zackular$diff_abn[, -1], check.names = FALSE) %>%
+  mutate(taxon_id = res_zackular$diff_abn$taxon) %>%
+  select(taxon_id, everything())
+colnames(df_se_zackular)[-1] = paste0(colnames(df_se_zackular)[-1], "SE")
+#df_se_zackular
+
+df_fig_crc = df_lfc_zackular %>%
+  filter(DiseaseStateCRC != 0) %>%  #  LFC != 0
+  transmute(taxon_id, 
+            `CRC vs. Non-CRC` = round(DiseaseStateCRC, 2)) %>% 
+  pivot_longer(cols = `CRC vs. Non-CRC`, 
+               names_to = "group", values_to = "value") %>%
+  arrange(taxon_id)  # order by taxon_id
+#df_fig_crc
+
+lo <- floor(min(df_fig_crc$value))
+up <- ceiling(max(df_fig_crc$value))
+mid <- (lo + up)/2
+
+p_crc <- df_fig_crc %>%
+  ggplot(aes(x = group, y = taxon_id, fill = value)) + 
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       na.value = "white", midpoint = mid, limit = c(lo, up),
+                       name = NULL) +
+  geom_text(aes(group, taxon_id, label = value), color = "black", size = 4) +
+  labs(x = NULL, y = NULL, title = "Log fold changes") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+p_crc
+```
+
+# Sccomp{.tabset}
+
+## Count Dataframe
+```{r,message=FALSE, warning=FALSE}
+#OTU_matrix_zackular
+#row_data
+#metadata
+
+# Check whether the different components are matched
+#identical( colnames(OTU_matrix_zackular), rownames(metadata) ) 
+#identical( rownames(OTU_matrix_zackular), rownames(row_data) )
+
+otu_df_zackular <- as.data.frame(OTU_matrix_zackular)
+taxonomy_df <- as.data.frame(row_data)
+#otu_df_zackular
+#taxonomy_df
+
+OTU_mat_transposed_zackular <- as.data.frame(t(otu_df_zackular))
+#OTU_mat_transposed_zackular
+
+#all(rownames(OTU_mat_transposed_zackular) == metadata$Sam_id) 
+OTU_meta_zackular <- cbind(OTU_mat_transposed_zackular, metadata)
+#OTU_meta_zackular
+
+OTU_meta_select_zackular <- OTU_meta_zackular[,c(64, 1:63,66)]
+rownames(OTU_meta_select_zackular) <- NULL
+#OTU_meta_select_zackular
+```
+
+```{r,message=FALSE, warning=FALSE}
+# head(counts_obj)
+# sample -> Sam_id
+# cell_group -> Taxa
+# type -> DiseaseState
+
+CRC_count_long_zackular <- OTU_meta_select_zackular %>%
+  mutate(across(where(is.numeric), as.character)) %>%
+  pivot_longer(
+    cols = -c(Sam_id, DiseaseState), 
+    names_to = "Taxa",    
+    values_to = "count"  
+  ) %>%
+  drop_na() 
+
+CRC_count_long_zackular$count <- as.integer(CRC_count_long_zackular$count) # sccomp only accept counts(int)
+head(CRC_count_long_zackular) %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+
+
+## FDR
+```{r,message=FALSE, warning=FALSE}
+set.seed(2024)
+CRC_Sccomp_zackular <- CRC_count_long_zackular|>
+  sccomp_estimate( 
+    formula_composition = ~ DiseaseState, 
+    .sample = Sam_id,
+    .cell_group = Taxa,
+    .count = count,  
+    # For CyTOF and microbiome data,recommend setting `bimodal_mean_variability_association  = FALSE` (Default).
+    bimodal_mean_variability_association = FALSE, 
+    cores = 1, verbose = FALSE # Last time there was no "verbose = FALSE"
+  ) |> 
+  #sccomp_remove_outliers(cores = 1, verbose = FALSE) |> # Optional
+  sccomp_test()
+#CRC_Sccomp_zackular
+
+c_FDR <- CRC_Sccomp_zackular[seq(2, nrow(CRC_Sccomp_zackular), by = 2),  c(1, 2, 3, 7, 8)]
+
+datatable(c_FDR, options = list(
+  pageLength = 5, autoWidth = TRUE
+)) %>% 
+  formatStyle(
+    'c_FDR',
+    backgroundColor = styleInterval(0.05, c('lightblue', 'transparent'))
+  )
+```
+
+```{r}
+CRC_Sccomp_zackular <- CRC_Sccomp_zackular[!grepl("incertae_sedis", CRC_Sccomp_zackular$Taxa), ]
+CRC_Sccomp_zackular <- CRC_Sccomp_zackular[!grepl("stricto", CRC_Sccomp_zackular$Taxa), ]
+```
+
+

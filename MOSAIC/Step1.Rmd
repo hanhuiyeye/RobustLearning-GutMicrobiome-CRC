@@ -1,0 +1,79 @@
+---
+title: "Step1"
+author: "Huiye Han"
+date: "2024-08-19"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(readr)
+library(mia)
+library(phyloseq)
+```
+
+# load_phyloseq_from_merged_microbiomeHD
+```{r}
+load_phyloseq_from_merged_microbiomeHD <- function (otu_mat_path, meta_data_path){
+    # data loading
+    otu_mat<- t(read.csv(otu_mat_path, row.names=1))
+    
+    # split otu_mat's rownames(otu) into a dataframe by splitting with '.' and get the existing taxa classes/levels
+    taxa_l = lapply(rownames(otu_mat), function(x) strsplit(x, "[.]")[[1]])
+    taxa_classes <- lapply(taxa_l[[1]], function(x) strsplit(x, '__')[[1]][1])
+    taxa_l = lapply(taxa_l, function(x) lapply(x, function(y) strsplit(y, '__')[[1]][2][1]))
+    taxa_mat = as.data.frame(t(as.data.frame(do.call(cbind, taxa_l))))
+    colnames(taxa_mat) <- taxa_classes
+    
+    # assign otu_mat's rownames as the first column of taxa_mat
+    rownames(otu_mat) = rownames(taxa_mat)
+
+    # clean taxa_mat and otu_mat for taxa that do not have all levels
+    cleaned_taxa_mat <- taxa_mat[!is.na(taxa_mat$'g'), ]
+    dim(cleaned_taxa_mat)
+    # get otu_mat for cleaned taxa_mat
+    cleaned_otu_mat <- otu_mat[rownames(cleaned_taxa_mat), ]
+
+    # reasigns the rownames of otu_mat as sp+number
+    rownames(cleaned_otu_mat) <- paste0('sp', 1:nrow(cleaned_otu_mat))
+
+    # load metadata
+    meta_data = read.csv(meta_data_path)
+    meta_data <- meta_data %>% 
+        tibble::column_to_rownames("Sam_id") 
+
+    # turn data into phyloseq object
+    phyloseq_dataset <- phyloseq(otu_table(cleaned_otu_mat, taxa_are_rows = TRUE), sample_data(meta_data), tax_table(cleaned_taxa_mat))
+
+    return(phyloseq_dataset)
+}
+```
+
+# clean_prune_save_phyloseq
+```{r}
+clean_prune_save_phyloseq <- function (phyloseq_dataset, out_str, libsize_threshold, relab_threshold, save = FALSE, save_to = NULL){
+    # sample-wise cleaning: remove samples with less than 0.05% libsize_threshold percentile
+    print(phyloseq_dataset)
+    libsize_threshold_num = quantile(sample_sums(phyloseq_dataset), libsize_threshold)
+    phyloseq_dataset <- prune_samples(sample_sums(phyloseq_dataset) > libsize_threshold_num, phyloseq_dataset)
+    print(phyloseq_dataset)
+    # taxon-wise cleaning: remove taxa with less than relab_threshold relative abundance
+    phyloseq_dataset <- prune_taxa(taxa_sums(phyloseq_dataset) > relab_threshold, phyloseq_dataset)
+    print(phyloseq_dataset)
+    if(save){
+        # currently can only save otu table, metadata, and taxonomy info
+        write.csv(otu_table(phyloseq_dataset), paste(save_to, "/otu_table_", out_str, '.csv', sep=""), row.names = TRUE)
+        write.csv(as.matrix(sample_data(phyloseq_dataset)), paste(save_to, "/sample_table_", out_str, '.csv', sep=""), row.names = TRUE)
+        write.csv(tax_table(phyloseq_dataset), paste(save_to, "/tax_table_", out_str, '.csv', sep=""), row.names = TRUE)
+    }
+    return(phyloseq_dataset)
+}
+```
+
+```{r,message=FALSE,warning=FALSE}
+overall_path = '/Users/hehehe/Desktop/CRC'
+microbiomeHD_CRC_phyloseq_obj <- load_phyloseq_from_merged_microbiomeHD(paste0(overall_path,
+                                                            '/MOSAIC/microbiomeHD Merge/intermediate_microbiomeHD_count_data.csv'), 
+                                                           paste0(overall_path, 
+                                                            '/MOSAIC/microbiomeHD Merge/intermediate_microbiomeHD_meta_data.csv'))
+clean_prune_save_phyloseq(microbiomeHD_CRC_phyloseq_obj, 'microbiomeHD', 0.05, 0.05, save = TRUE, save_to = '/Users/hehehe/Desktop/CRC/MOSAIC/microbiomeHD Pruned')
+```

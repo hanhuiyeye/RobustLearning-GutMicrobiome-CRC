@@ -1,0 +1,204 @@
+---
+title: "Point Plot"
+author: "Huiye Han"
+date: "2024-09-06"
+output: html_document
+---
+Run Main.Rmd first!
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(ggpubr)
+```
+
+# ALL DA results
+```{r}
+data <- data.frame(
+  taxa = c('Fusobacterium', 'Peptostreptococcus', 'Porphyromonas', 'Anaerostipes', 'Pseudoflavonifractor',
+           'Acetanaerobacterium', 'Clostridium_XlVb', 'Porphyromonas', 'Desulfovibrio', 'Lactococcus',
+           'Acinetobacter', 'Gemella', 'Holdemania', 'Ruminococcus', 'Olsenella'),
+  LEfSe = c(TRUE,T,T,T,T,
+            T,T,T,T,T,
+            F,F,F,F,F),
+  ANCOM_BC = c(TRUE,T,T,T,T,
+               T,T,T,T,F,
+               F,T,T,T,F),
+  Sccomp = c(TRUE,T,F,F,F,
+             F,F,F,F,F,
+             F,F,F,F,T)
+)
+
+data
+
+data_long <- data %>%
+  pivot_longer(cols = -taxa, names_to = "method", values_to = "Labels")
+
+p1 <- ggplot(data_long, aes(x = method, y = taxa)) +
+  geom_point(aes(fill = Labels), color = "white", size = 5, shape = 21) +  # create dots
+  scale_fill_manual(values = c("white", '#F8766D'), na.value = "transparent", labels = c("Not Significant", "Significant")) + 
+  theme_minimal() +
+  labs(x = "Method", y = "Taxa") + 
+  theme(axis.text.x = element_text(angle = 0, hjust = 0.5),  
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16)) +
+        #panel.grid = element_blank()) 
+  scale_x_discrete(position = "top")  
+
+p1
+#ggsave("point_plot.jpg", plot = p, width = 10, height = 8, dpi = 1000)
+```
+
+```{r}
+# lefse
+# set Group acording to LDA is positive or negative
+CRC_LEfSe_zackular$Group <- ifelse(CRC_LEfSe_zackular$scores > 0, "CRC", "Healthy")
+CRC_LEfSe_zackular
+
+CRC_color <-'#F8766D'
+Healthy_color <-'#00BFC4'
+
+# plot
+p2 <- ggplot(CRC_LEfSe_zackular, aes(x = scores, y = reorder(features, scores), fill = Group)) +
+  geom_bar(stat = "identity", color = "black", width = 0.8) +
+  scale_fill_manual(values = c("CRC" = CRC_color, "Healthy" = Healthy_color)) +
+  theme_minimal() +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +  
+  labs(title = "LDA Effect Size for Taxa", x = "LDA SCORE (log 10)", y = NULL) +
+  theme(
+    text = element_text(size = 20),
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 15),
+    axis.title.x = element_text(size = 20),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+p2
+#ggsave("LDA_score.jpg", plot = p, width = 8, height = 10, dpi = 1000)
+```
+
+```{r}
+# LFC
+p_lfc <- df_fig_crc %>%
+  ggplot(aes(x = group, y = reorder(taxon_id, value), fill = value)) +  # order taxon_id 
+  geom_tile(color = "black") +
+  scale_fill_gradient2(low = '#00BFC4', mid = "white", high = '#F8766D', 
+                       na.value = "white", midpoint = mid, limit = c(lo, up),
+                       name = NULL) +
+  geom_text(aes(group, taxon_id, label = value), color = "black", size = 4) +
+  labs(x = NULL, y = NULL, title = "Log Fold Changes") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16),  
+    axis.text.x = element_text(size = 12),  
+    axis.text.y = element_text(size = 12),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),  
+    panel.background = element_blank() 
+  )+
+  coord_fixed(ratio = 0.5)  
+p_lfc
+#ggsave("LFC.jpg", plot = p_crc, width = 10, height = 8, dpi = 1000)
+```
+
+
+# Heatmap
+```{r}
+sample_annot = data.frame(Group = as.factor(metadata$DiseaseState))
+rownames(sample_annot) = metadata$Sam_id
+
+library(grid)
+# Calculate the total abundance of each taxon (sum of each row)
+total_abundance <- rowSums(OTU_tab_clr)
+# Exclude taxa containing ‘incertae_sedis’
+OTU_tab_filtered <- OTU_tab_clr[!grepl("incertae_sedis", rownames(OTU_tab_clr)), ]
+# Calculate total abundance of filtered taxa
+total_abundance_filtered <- rowSums(OTU_tab_filtered)
+# Rank taxa based on total abundance and select top 25 most common taxa
+top_25_taxa <- names(sort(total_abundance_filtered, decreasing = TRUE))[1:25]
+# The data for these 25 taxa were screened
+OTU_top_25 <- OTU_tab_filtered[top_25_taxa, ]
+```
+
+```{r}
+# Adjust the legend layout to align the legend up and down
+ha <- HeatmapAnnotation(Group = sample_annot$Group,  
+                        col = list(Group = c('H' = '#00BFC4', 'CRC' = '#F8766D')))  
+heatmap_colors <- colorRampPalette(c('#7b6df8', '#FCFCE3', 'red'))(50)
+
+# Heatmap
+ht <- Heatmap(OTU_top_25, 
+              name = "Abundance\n(CLR)",  
+              top_annotation = ha,  
+              show_row_names = TRUE,  
+              show_column_names = FALSE, 
+              cluster_rows = TRUE,  
+              cluster_columns = TRUE,  
+              col = heatmap_colors, 
+              heatmap_legend_param = list(
+                  title_gp = gpar(fontsize = 10, fontface = "bold"),  
+                  labels_gp = gpar(fontsize = 8) 
+              ))
+
+draw(ht, annotation_legend_side = "right", heatmap_legend_side = "right", merge_legend = TRUE)
+```
+
+# Composition Plot
+```{r}
+# Exclude taxa containing ‘incertae_sedis’
+OTU_tab_filtered <- OTU_tab_rel[!grepl("incertae_sedis", rownames(OTU_tab_rel)), ]
+OTU_tab_filtered <- OTU_tab_filtered[!grepl("stricto", rownames(OTU_tab_filtered)), ]
+
+
+OTU_tab_rel_t <- t(OTU_tab_filtered) %>% 
+  as.data.frame() %>% 
+  mutate(Sam_id = colnames(OTU_tab_filtered))
+
+
+meta_otu <- merge(metadata, OTU_tab_rel_t, by = "Sam_id") 
+#View(meta_otu)
+df_daa_long <- meta_otu %>%
+  pivot_longer(
+    cols = 4:63,              
+    names_to = 'taxa',         
+    values_to = 'relative_abundance'  
+  )
+df_daa_long
+
+df_median <- df_daa_long %>%
+  group_by(taxa, DiseaseState) %>%
+  summarise(median_abundance = median(relative_abundance)) %>%
+  ungroup()
+#df_median
+```
+
+```{r}
+taxa_colors <- c(  
+  '#5F74F8', '#696DF8', '#7267F7', '#7b6df8', '#8171f6', '#8775f4', '#8e79f2', '#947df0', 
+  '#b491e4', '#bb95e2', '#d5a6d9', '#dbaad7', '#e3aed5', '#e9b2d2', '#efb6d0', '#f6bace',
+  '#fcbecc', '#ffc2cc', '#ffc5cd', '#ffc8ce', '#fecbcf', '#fed1d2', '#fed4d3', '#fde8db', 
+  '#fdebdc', '#fdefde', '#fdf1df', '#fcf4e0', '#fcf7e1', '#fffcda', '#fffdc0', '#fffa99',
+  '#fffd90', '#fffa80', '#fffd51', '#fffd94', '#ffff90', '#fffdc9', '#fcfae2', '#fcf6de',
+  '#fcead3', '#fdefde', '#fcdec8', '#fcdec8', '#fcd2be', '#fdc7b3', '#fdb8a6', '#fdac9b',  
+  '#fda090', '#fd9486', '#fd887b', '#fe7a6d', '#fe6e63', '#fe6258', '#fe564d', '#fe4a43',  
+  '#fe3b35', '#fe2f2b', '#ff2420', '#ff1815', '#ff0c0b', '#ff0000'  
+)
+
+p <- ggplot(df_median, aes(x = DiseaseState, y = median_abundance, fill = taxa)) +
+  geom_bar(stat = 'identity', position = 'stack') +  
+  theme_minimal() +  
+  labs(y = "Median Relative Abundance (%)", x = NULL, fill = "Genus") +  
+  theme(axis.text.x = element_text(hjust = 1), 
+        legend.position = "right",   
+        legend.title = element_text(face = "bold")) +  
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +  
+  scale_fill_manual(values = taxa_colors) + 
+  guides(fill = guide_legend(ncol = 2, keywidth = 0.5, keyheight = 0.5)) 
+p
+
+#ggsave("composition_plot.jpg", plot = p, width = 8, height = 5, dpi = 1000)
+```
+
+

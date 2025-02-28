@@ -1,0 +1,68 @@
+---
+title: "Benchmarking ConQuR"
+author: "Huiye Han"
+date: "2024-08-19"
+output: html_document
+---
+```{r,message=FALSE,warning=FALSE}
+#!/usr/bin/env Rscript
+library(xtable) # table
+# library(mixOmics)
+library(sva) # ComBat
+library(limma) # removeBatchEffect (LIMMA)
+library(vegan) # RDA
+library(MMUPHin)
+library(FDboost)  
+library(doParallel) 
+library(dplyr)
+library(readr)
+library(tibble)
+library(stringr)
+library(mixOmics)
+```
+
+```{r}
+## load ConQuR
+current_path = getwd()
+conqur_path = str_replace(current_path, "/MOSAIC", "/MOSAIC/ConQuR")
+source(paste0(conqur_path, "/ConQuR_help_functions.R"))
+source(paste0(conqur_path, "/ConQuR_main_tune.R"))
+source(paste0(conqur_path, "/ConQuR_help_functions_libsize_old.R"))
+source(paste0(conqur_path, "/ConQuR_main_tune_libsize_old.R"))
+source(paste0(conqur_path, "/ConQuR_help_functions_rel.R"))
+source(paste0(conqur_path, "/ConQuR_main_tune_rel.R"))
+source(paste0(conqur_path, "/supporting_functions.R"))
+```
+
+```{r,warning=FALSE,message=FALSE}
+metadata <- read.csv("/Users/hehehe/Desktop/CRC/MOSAIC/cleaned_data/microbiomeHD/microbiomeHD_meta_data.csv")
+metadata <- metadata %>%
+  as.data.frame() %>%
+  mutate(
+    DiseaseState = ifelse(DiseaseState == "nonCRC", "H", DiseaseState)
+  )
+rownames(metadata) <- metadata$Sam_id
+metadata$DiseaseState <- factor(metadata$DiseaseState, levels = c("H","CRC"))
+
+OTU_tab <- read.csv("/Users/hehehe/Desktop/CRC/MOSAIC/cleaned_data/microbiomeHD/microbiomeHD_count_data.csv", header = TRUE,row.names=1 )
+
+covar = data.frame(DS = factor(metadata$DiseaseState))
+id_remove = which(is.na(covar))
+covar = covar[-id_remove, drop=F, ]
+
+taxa = OTU_tab[-id_remove, ]
+
+batchid = metadata[, 'Dataset']
+batchid = factor(batchid)
+batchid = relevel(batchid, ref = "crc_zeller")
+batchid = batchid[-id_remove]
+fit_crc_zeller = ConQuR(tax_tab=taxa, batchid=batchid, covariates=covar, batch_ref="crc_zeller")
+save(fit_crc_zeller, file = "/Users/hehehe/Desktop/CRC/MOSAIC/otu_crc_zeller.RData")
+
+batchid = metadata[, 'Dataset']
+batchid = factor(batchid)
+batchid = relevel(batchid, ref = "crc_zackular")
+batchid = batchid[-id_remove]
+fit_crc_zackular = ConQuR(tax_tab=taxa, batchid=batchid, covariates=covar, batch_ref="crc_zackular")
+save(fit_crc_zackular, file = "/Users/hehehe/Desktop/CRC/MOSAIC/otu_crc_zackular.RData")
+```
