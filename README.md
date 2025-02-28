@@ -5,7 +5,7 @@ This repository provides a workflow for microbiome data preprocessing, batch eff
 ## **1. Data Preprocessing and Batch Effect Correction**  
 - **Data Preprocessing:** The **`MOSAIC`** folder contains three steps: **`step0.ipynb`**, **`step1.Rmd`**, and **`step2.ipynb`**, which sequentially clean the dataset.  
 - **Batch Effect Correction:** **ConQuR** is applied using **`Benchmarking_ConQuR.Rmd`** in **`MOSAIC`** folder to correct batch effects.  
-- **Output:** The cleaned and batch-effect-corrected data is stored as **`Data_After_MOSAIC` ** folder.
+- **Output:** The cleaned and batch-effect-corrected data is stored as **`Data_After_MOSAIC`** folder.
 
 ## **2. Statistical Analysis**  
 - Statistical computations are performed using the scripts in the **`Main.Rmd`** directory.  
