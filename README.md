@@ -8,8 +8,8 @@ This repository contains the code used in the manuscript "Deciphering gut microb
 - **Output:** The cleaned and batch-effect-corrected data is stored as **`Data_After_MOSAIC`** folder.
 
 ## **2. Statistical Analysis**  
-- Statistical computations are performed using the scripts in the **`Main.Rmd`** directory.  
-- Various analyses are conducted to identify significant microbiome features.
+- Statistical computations are performed using the scripts **`Main.Rmd`**.  
+- Various analyses are conducted to identify microbial signatures for colorectal cancer.
 
 ## **3. Data Visualization**  
 - The visualization scripts in the **`Plots`** folder generate figures and graphs based on the processed data.  
